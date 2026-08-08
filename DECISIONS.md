@@ -62,3 +62,6 @@ batch for one bad row is worse — then lenient plus alerting on the skip rate.
 **Rejected:**
 **Why:**
 **Revisit if:**
+
+### 7. we add ci.yml
+### 8. we added rulesets in order to protect remote main from being deleted
