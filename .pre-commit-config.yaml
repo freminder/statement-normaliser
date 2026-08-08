@@ -1,0 +1,43 @@
+# Install once per clone:  uv run pre-commit install
+# From then on, broken code cannot be committed. Set this up now; it is the
+# cheapest quality habit in the whole curriculum.
+#
+# ONE file, many repos. Never one file per tool.
+# Pin revs with `uv run pre-commit autoupdate`, never by hand.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.2
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: detect-private-key
+      - id: no-commit-to-branch
+        args: [--branch, main]
+
+  # Secret scanning. detect-private-key above catches one narrow case; this
+  # catches API keys, tokens and cloud credentials. In a regulated firm a
+  # leaked key in git history is a reportable incident, and history is forever.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+
+  # Typos in code, comments and docs. Cheap, and it catches the embarrassing
+  # ones in a README a hiring manager will read.
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.3
+    hooks:
+      - id: codespell
+        # Tickers and broker column names are not English; skip the fixtures.
+        # Quote each arg: an unquoted comma splits the YAML list into separate
+        # items, so the word lists must stay inside a single string.
+        args: ["--ignore-words-list=nd,ba,te", "--skip=*.csv,uv.lock"]

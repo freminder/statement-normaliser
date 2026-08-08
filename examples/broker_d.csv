@@ -1,0 +1,5 @@
+Transaction Date,Security,Type,Units,Gross Amount
+"Jan 15, 2024",AMZN,Purchase,"10","$1,552.40"
+"Mar 08, 2024",AMZN,Purchase,"5","$886.15"
+"Jun 27, 2024",AMZN,Sale,"8","$1,548.00"
+TOTAL,,,23,"$3,986.55"
