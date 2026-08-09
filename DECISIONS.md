@@ -44,24 +44,37 @@ batch for one bad row is worse — then lenient plus alerting on the skip rate.
 
 ## 4. Trade date vs settlement date
 
-**Decision:** _(yours — Broker C gives you settlement date)_
+**Decision:** Timeline (T+1): Most standard stock and ETF trades settle on a `T+1 basis` (Trade date plus one business day). If you buy on Monday, it settles on Tuesday.
 **Rejected:**
 **Why:**
 **Revisit if:**
 
 ## 5. Where the TOTAL-row filter lives
 
-**Decision:** _(yours — parser hook or io.py filter?)_
+**Decision:** io.py filter
 **Rejected:**
 **Why:**
 **Revisit if:**
 
 ## 6. Ticker identity across sources
 
-**Decision:** _(yours — is `VOD` the same instrument as `VOD.L`?)_
+**Decision:**  `VOD` trades on the U.S. NASDAQ exchange, whereas `VOD.L` trades on the London Stock Exchange (LSE). `Currency`: `VOD` is priced and settled in U.S. Dollars `(USD)`, while `VOD.L` is priced and quoted in British pence `(GBX/GBp)` or pounds. VOD and VOD.L stay distinct; instrument identity includes the exchange.
 **Rejected:**
 **Why:**
-**Revisit if:**
+**Revisit if:** GBP assumed, GBX would need detection and a 100× correction.
 
-### 7. we add ci.yml
-### 8. we added rulesets in order to protect remote main from being deleted
+## 7. Fee across sources
+**Decision:** Because Broker D does not declare Fee, I will take 1.5 USD, same as Broker A.
+**Rejected:** When data quality becomes of high standards or broker report the true Fee. Platform commission be declared.
+**Why:** I assume that both Brokers have the same platform, therefore same commission.
+**Revisit if:** When data quality becomes of high standards or broker report the true Fee. Platform commission be declared.
+
+## 8. Quantity Symbol declares Side across sources
+**Decision:** Broker C does not report Side clearly, but as part of the Quantity. `Negative` Quantity means `SELL`, `Positive` Quantity means `BUY`.
+**Rejected:** When an official declaration comes.
+**Why:**
+**Revisit if:** after new information comes
+
+### 7. Added ci.yml
+
+### 8. Added rulesets in order to protect remote main from being deleted
