@@ -51,11 +51,19 @@ def read_statement(path: Path, *, strict: bool = True) -> Iterator[Transaction]:
 
         parser = parser_cls()
         logger.info("parsing %s with %s", path.name, parser_cls.name)
+        skipped = 0
 
         for line_number, raw_row in enumerate(reader, start=2):  # 1 is the header
             row = {
                 (k or "").strip().lower(): (v or "").strip() for k, v in raw_row.items()
             }
+            if parser.should_skip(row):
+                skipped += 1
+                logger.debug("skipping non-transaction row at line %d", line_number)
+                continue
+            if skipped:
+                logger.info("%s: skipped %d non-transaction row(s)", path.name, skipped)
+
             try:
                 yield parser.parse_row(row)
             except (ValueError, KeyError) as exc:

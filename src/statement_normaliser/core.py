@@ -24,6 +24,8 @@ _DEFAULT_DATE_FORMATS: tuple[str, ...] = (
     "%d/%m/%Y",
     "%d-%b-%Y",
     "%b %d, %Y",
+    "%d-%b-%y",
+    "%b %d, %Y",
 )
 
 
@@ -120,6 +122,27 @@ def parse_side(raw: str) -> Side:
     if normalised in sells:
         return Side.SELL
     raise ValueError(f"unrecognised side {raw!r}")
+
+
+def side_from_signed_quantity(quantity: Decimal) -> Side:
+    """Derive trade direction from the sign of a signed quantity.
+
+    Some brokers omit a direction column and encode it in the sign instead:
+    a negative quantity is a sale. The canonical model keeps quantity positive
+    and direction in ``side``, so callers must pair this with ``abs()``.
+
+    Args:
+        quantity: Signed quantity as reported by the source.
+
+    Returns:
+        BUY for a positive quantity, SELL for a negative one.
+
+    Raises:
+        ValueError: If quantity is zero — direction is undeterminable.
+    """
+    if quantity == 0:
+        raise ValueError("Quantity cannot be Zero")
+    return Side.SELL if quantity < 0 else Side.BUY
 
 
 def normalise_symbol(raw: str) -> str:
