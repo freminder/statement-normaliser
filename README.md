@@ -2,93 +2,168 @@
 
 Turns broker statement CSVs from four different sources into one canonical schema.
 
-> **This repo is a scaffold, not a finished project.** Broker A is implemented as
-> a worked reference. Brokers B, C and D are yours. The point is to have a
-> concrete example of the standard before you write your own code — not to have
-> the work done for you. Delete this box when you finish.
-
 ## The problem
 
-Four brokers, four CSV formats. Different column names, four date formats, one
-source signs sells as negative quantities instead of labelling them, one bundles
-fees into the price, one appends a `TOTAL` row at the bottom that will quietly
-corrupt every downstream number if you don't catch it.
+Four brokers, four CSV formats. Different column names, four date formats, four
+side conventions, two currencies — and every source awkward in a different way:
 
-This is not a contrived exercise. Reconciling client data that arrives in
-formats nobody documented is the first two weeks of most engagements.
+| Source | The awkward bit |
+|---|---|
+| **A** | The easy case. ISO dates, explicit columns. |
+| **B** | `DD/MM/YYYY` dates, `B`/`S` labels, `£` prefixes, quantities quoted as `"1,000"`, no fee column |
+| **C** | No side column at all — direction is encoded in the *sign* of the quantity. Reports settlement date, not trade date. |
+| **D** | No price column — only a gross amount, with fees bundled in. A `TOTAL` summary row at the bottom that will corrupt every downstream number if it isn't caught. |
 
-## What's built
+This isn't a contrived exercise. Reconciling client data that arrives in formats
+nobody documented is the first two weeks of most engagements.
+
+## Results
+
+```
+$ uv run normalise --input examples/ --output out/canonical.csv
+INFO parsing broker_a.csv with broker_a
+INFO parsing broker_b.csv with broker_b
+INFO parsing broker_c.csv with broker_c
+INFO parsing broker_d.csv with broker_d
+INFO wrote 13 transactions to out/canonical.csv
+```
+
+```
+trade_date,symbol,side,quantity,price,fees,currency,source
+2024-01-15,AAPL,BUY,100,150.00,1.50,USD,broker_a
+2024-01-15,AAPL,BUY,200,149.10,2.95,USD,broker_c
+2024-01-15,AMZN,BUY,10,155.24,0,USD,broker_d
+2024-01-15,VOD.L,BUY,1000,0.69,0,GBP,broker_b
+2024-02-19,AAPL,SELL,75,168.40,2.95,USD,broker_c
+2024-02-20,MSFT,BUY,50,410.25,1.50,USD,broker_a
+2024-03-08,AMZN,BUY,5,177.23,0,USD,broker_d
+2024-03-11,AAPL,SELL,40,172.80,1.50,USD,broker_a
+2024-04-03,BP.L,BUY,500,4.82,0,GBP,broker_b
+2024-04-07,TSLA,BUY,50,171.05,2.95,USD,broker_c
+2024-05-02,NVDA,BUY,25,880.10,1.50,USD,broker_a
+2024-06-22,VOD.L,SELL,400,0.74,0,GBP,broker_b
+2024-06-27,AMZN,SELL,8,193.50,0,USD,broker_d
+```
+
+| | |
+|---|---|
+| Sources parsed | 4 formats → 1 schema |
+| Rows in / out | 14 data rows → **13 transactions** (1 summary row skipped) |
+| Per source | A: 4 · B: 3 · C: 3 · D: 3 |
+| Currencies | GBP and USD, side by side, **unconverted** |
+| Tests | **87 passing**, 96% coverage, 0.10s |
+| Runtime dependencies | **none** — standard library only |
+
+**Reconciliation check.** Broker D reports no price, so it's derived as
+gross ÷ units. Multiplied back out, the three parsed rows sum to **3986.55** —
+exactly the `TOTAL` row the parser discards. The source proves the parser
+correct, to the cent.
+
+## Design decisions
+
+Full reasoning in [DECISIONS.md](DECISIONS.md). The three that shaped everything:
+
+**Normalise representation, never value.** Dates, tickers, column names and side
+labels are *representation* — normalise them freely. Prices, quantities and
+currencies are *facts about what happened* — preserve them exactly. So GBP and
+USD rows sit in the same file, each unambiguous because `currency` says which.
+Nothing is FX-converted at ingestion: that needs a rate, and a rate needs a date
+and a source, and baking one in silently destroys the ability to reproduce what
+the broker actually reported.
+
+**Direction lives in `side`, never in a sign.** Broker C encodes sells as
+negative quantities. The canonical model keeps quantity positive and forces that
+translation into the parser, where it's visible and tested, rather than leaking a
+second representation through the codebase.
+
+**Instrument identity includes the exchange.** `VOD` (NASDAQ, USD) and `VOD.L`
+(LSE, GBP) are different instruments with different ADR ratios. Merging them
+would corrupt share counts by an integer factor, silently and permanently.
+
+## Architecture
 
 ```
 src/statement_normaliser/
-├── models.py     # Transaction — immutable, self-validating, Decimal money
+├── models.py     # Transaction — frozen, self-validating, Decimal money
 ├── errors.py     # exception hierarchy; every message names file + line
 ├── core.py       # PURE parsing logic — no I/O, testable with literals
-├── parsers.py    # one class per broker + dispatch registry  ← YOUR WORK
+├── parsers.py    # one class per broker + dispatch registry
 ├── io.py         # the only module allowed to touch disk
 └── cli.py        # thin entry point, zero business logic
 ```
 
-The structural rule worth internalising: `core.py` never opens a file. All I/O
-lives at the edges. That is why `test_core.py` needs no fixtures, no temp
-directories and no mocking — and why the tests run in milliseconds.
+The rule that matters: **`core.py` never opens a file.** All I/O lives at the
+edges. That's why `test_core.py` needs no fixtures, no temp directories and no
+mocking, and why the whole suite runs in a tenth of a second.
+
+Adding a fifth broker means one class and one registry entry. Nothing that
+already works is touched.
 
 ## Quickstart
 
 ```bash
 uv sync
-uv run pytest --cov=src        # 40 tests passing, 98% coverage
-uv run ruff check . && uv run mypy    # both clean
+uv run pytest --cov=src
+uv run normalise --input examples/ --output out/canonical.csv
 ```
 
-Then run it. On the full `examples/` folder it will **fail on purpose**:
+Install it as a standalone tool, no Python knowledge required at the far end:
+
+```bash
+uv tool install .
+normalise --input ~/statements --output canonical.csv
+```
 
 ```
-$ uv run normalise --input examples/ --output out.csv
-INFO  parsing broker_a.csv with broker_a
-ERROR no parser matched headers ['Date', 'Instrument', 'B/S', ...] in examples/broker_b.csv
+usage: normalise [-h] --input INPUT --output OUTPUT [--lenient] [--dry-run] [-v]
+
+  --input     directory containing broker statement CSVs
+  --output    path to write the canonical CSV
+  --lenient   log and skip unparsable rows instead of failing (default: fail)
+  --dry-run   parse and report, but write nothing
 ```
 
-That error is the assignment. Brokers B, C and D have no parsers yet.
-
-
-## Your assignment
-
-Implement three parsers in `parsers.py`. Each is awkward in a different, and
-deliberately realistic, way:
-
-| Broker | The awkward bit | What you'll have to decide |
-|---|---|---|
-| **B** | `DD/MM/YYYY` dates, `B`/`S`, £ symbols, quoted thousands, no fee column | Is `03/04/2024` March or April? Your `date_formats` is the answer — justify it in `DECISIONS.md`. |
-| **C** | Negative quantity = sell, no action column, *settlement* date | Where does sign→side translation belong, and what does the settlement/trade date mismatch do to your P&L? |
-| **D** | A `TOTAL` summary row; fees baked into a gross amount | A parser only sees one row at a time. Add a `should_skip()` hook to the base class, or filter in `io.py`? Both work. Pick one and defend it. |
-
-For each: write the tests **first**, then the parser. Then run the checklist.
-
-## Done when
-
-- [ ] All four brokers parse
-- [ ] `uv run pytest --cov=src` passes, ≥80% coverage
-- [ ] `uv run ruff check . && uv run mypy src/` clean
-- [ ] `DECISIONS.md` has your three decisions, with rejected alternatives
-- [ ] A **Results** section below with real numbers
-- [ ] A **Where this fails** section below, written honestly
-- [ ] Explain-back test passed: close the editor, explain every choice out loud
-
-## Results
-
-<!-- Fill this in. Numbers, not adjectives. Example shape: -->
-<!-- | Source | Rows in | Parsed | Skipped | Notes | -->
-<!-- Then: total runtime on N rows. -->
+Strict is the default deliberately. Skip-and-log by default means a broken export
+silently drops 400 of 1,000 rows and you reconcile to a confidently wrong number.
+Loud failure costs minutes; quiet data loss costs a client's trust.
 
 ## Where this fails
 
-<!-- Fill this in honestly. Some real ones to get you started — verify each: -->
-<!-- - Assumes UTF-8; a Latin-1 export will raise on read. -->
-<!-- - No FX handling: GBP and USD rows sit in the same file, uncombined. -->
-<!-- - No corporate actions. A stock split makes historical quantities wrong. -->
-<!-- - Whole file loaded into memory; fine at 10^5 rows, not at 10^8. -->
+**Broker C's dates are not trade dates.** The source reports settlement date and
+the parser subtracts a fixed offset in *calendar* days. Real settlement is a
+business-day offset that depends on the market and on the date — US equities
+moved to T+1 on 28 May 2024, UK and EU remain T+2 until 11 October 2027 — and it
+needs an exchange holiday calendar. Every Broker C date in `examples/` is
+therefore wrong by one to three days. **The correct fix is to obtain trade dates
+from the source rather than derive them.** This is the largest known defect and
+it is deliberately visible rather than hidden.
 
-## Design decisions
+**Broker D's fees are unknown, recorded as zero.** They're bundled into the gross
+amount. So the derived price is fee-inflated: it reconciles against the source's
+own total, but it is not a clean execution price. `fees = 0` means *not
+separately reported*, not *none charged* — the schema has no way to say "unknown".
 
-See [DECISIONS.md](DECISIONS.md).
+**No FX.** GBP and USD rows coexist and are not comparable without a rate. Any
+total across currencies is meaningless. That's correct for an ingestion layer and
+a problem for whatever consumes it.
+
+**No corporate actions.** A stock split makes historical quantities wrong. No
+detection, no adjustment.
+
+**Whole file held in memory.** Fine at 10⁵ rows, not at 10⁸.
+
+**UTF-8 assumed.** A Latin-1 export raises on read rather than mangling silently,
+which is the right direction, but it isn't handled.
+
+**`%b` is locale-dependent.** `strptime` matches month abbreviations for the
+machine's locale. Parsing `17-Jan-2024` works on an English system and may not on
+another. Untested against a non-English locale.
+
+## What I'd do with another week
+
+1. Replace Broker C's date arithmetic with a business-day calendar — or better,
+   go back to the source for real trade dates
+2. Property-based tests with `hypothesis` for the money and date parsers
+3. Stream rows instead of materialising the whole file
+4. A `--report` flag emitting per-source row counts, skip counts and
+   reconciliation results, so a run is auditable without reading the logs
