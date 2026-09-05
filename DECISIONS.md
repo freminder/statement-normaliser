@@ -44,14 +44,36 @@ batch for one bad row is worse — then lenient plus alerting on the skip rate.
 
 ## 4. Trade date vs settlement date
 
-**Decision:** Timeline (T+1): Most standard stock and ETF trades settle on a `T+1 basis` (Trade date plus one business day). If you buy on Monday, it settles on Tuesday.
-**Rejected:**
-**Why:**
-**Revisit if:**
+**Decision:** Broker C reports `SETTLE_DT`, not a trade date. Trade date is the
+settlement date minus **one business day**, computed by
+`core.previous_business_day`, which steps back one day and keeps stepping while
+the result falls on a Saturday or Sunday.
+**Rejected:** A fixed `settle - timedelta(days=2)`, which was what the code
+originally did.
+**Why:** T+1 is the settlement cycle for US and UK equities. Fixed calendar
+arithmetic ignores weekends, and it produced `2024-04-07,TSLA,...,broker_c` in
+`out/canonical.csv` — a Sunday, a day on which no trade can happen. The real
+step is 1, 2 or 3 calendar days depending on where settlement lands: a Monday
+settlement means a Friday trade. Hardcoding any single number is right at most
+five days out of seven.
+**Revisit if:** three known limits, all accepted for now.
+
+1. *The cycle is not constant.* US equities only moved to T+1 on 28 May 2024;
+   before that they were T+2, and UK and EU stay T+2 until 11 October 2027. The
+   Broker C rows in `examples/` are dated January to April 2024, so under the
+   rule in force at the time their true offset was two business days, not one.
+   A date-dependent or per-broker offset is the correct fix; a single constant
+   is not.
+2. *No holiday calendar.* Good Friday 2024 (29 March) and Easter Monday
+   (1 April) are treated as trading days. The standard library ships no
+   exchange calendar and this project is standard library only.
+3. *Deriving at all is second best.* A trade date obtained from the source
+   beats any arithmetic. Ask the broker for the field before improving the
+   formula.
 
 ## 5. Where the TOTAL-row filter lives
 
-**Decision:** io.py filter
+**Decision:** TOTAL filter lives in parsers class as `should_skip`.
 **Rejected:**
 **Why:**
 **Revisit if:**
@@ -64,7 +86,7 @@ batch for one bad row is worse — then lenient plus alerting on the skip rate.
 **Revisit if:** GBP assumed, GBX would need detection and a 100× correction.
 
 ## 7. Fee across sources
-**Decision:** Because Broker D does not declare Fee, I will take 1.5 USD, same as Broker A.
+**Decision:** Because Broker D does not declare Fee, I will take `0` USD, same as Broker A.
 **Rejected:** When data quality becomes of high standards or broker report the true Fee. Platform commission be declared.
 **Why:** I assume that both Brokers have the same platform, therefore same commission.
 **Revisit if:** When data quality becomes of high standards or broker report the true Fee. Platform commission be declared.
@@ -75,6 +97,35 @@ batch for one bad row is worse — then lenient plus alerting on the skip rate.
 **Why:**
 **Revisit if:** after new information comes
 
-### 7. Added ci.yml
+## 9. Weekday arithmetic: standard library over hand-rolled
 
-### 8. Added rulesets in order to protect remote main from being deleted
+**Decision:** `date.weekday()`, with `SATURDAY = 5` named in `core.py`.
+**Rejected:** Sakamoto's congruence — written by hand, tested, then deleted.
+**Why:** Built first to understand what `weekday()` actually does, per the
+curriculum rule of implementing a thing before using the library version. Same
+answers on every date tried, in one line instead of a six-line month table with
+a January/February year shift that is easy to get wrong. `weekday()` is C in
+CPython and already tested upstream. Keeping both would have left two answers
+to one question, in two different layers.
+**Revisit if:** never, in CPython. Only relevant on a platform with no date
+library at all.
+
+## 10. A weekend settlement date warns, it does not fail
+
+**Decision:** If `SETTLE_DT` itself falls on a weekend, log
+`logger.warning` and keep parsing. The row still produces a transaction.
+**Rejected:** Raising `RowParseError` and letting strict mode abort.
+**Why:** A weekend settlement is suspicious data, not unparsable data — the
+value is readable and the trade date derived from it is still a valid business
+day. Decision #3 makes strict mode the default, so raising here would abort a
+whole run over one odd date, which is the loud-failure rule applied where it
+does not belong. The warning puts it in front of the operator without losing
+the row. Note this puts `logging` inside `core.py`, which was otherwise a pure
+module; accepted because logging performs no I/O of its own and the alternative
+was duplicating the check in every parser.
+**Revisit if:** weekend settlement dates turn out to signal a broken export
+rather than a back-dated booking — then promote it to an error.
+
+## 11. Added ci.yml
+
+## 12. Added rulesets in order to protect remote main from being deleted

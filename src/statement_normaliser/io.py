@@ -61,6 +61,7 @@ def read_statement(path: Path, *, strict: bool = True) -> Iterator[Transaction]:
                 skipped += 1
                 logger.debug("skipping non-transaction row at line %d", line_number)
                 continue
+
             if skipped:
                 logger.info("%s: skipped %d non-transaction row(s)", path.name, skipped)
 

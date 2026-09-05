@@ -129,40 +129,32 @@ Loud failure costs minutes; quiet data loss costs a client's trust.
 
 ## Where this fails
 
-**Broker C's dates are not trade dates.** The source reports settlement date and
-the parser subtracts a fixed offset in *calendar* days. Real settlement is a
-business-day offset that depends on the market and on the date — US equities
-moved to T+1 on 28 May 2024, UK and EU remain T+2 until 11 October 2027 — and it
-needs an exchange holiday calendar. Every Broker C date in `examples/` is
-therefore wrong by one to three days. **The correct fix is to obtain trade dates
-from the source rather than derive them.** This is the largest known defect and
-it is deliberately visible rather than hidden.
+**Broker C's dates are derived, not reported.** The source gives a settlement
+date; the trade date is computed as one *business* day earlier, stepping over
+weekends. That is right for US equities from 28 May 2024 onward. It is wrong
+before that date, and wrong for UK and EU rows, which stay on T+2 until
+11 October 2027 — the Broker C rows in `examples/` fall in that earlier window
+and are off by one business day. Exchange holidays are not handled either:
+Good Friday and Easter Monday count as trading days. **The correct fix is to
+obtain trade dates from the source rather than derive them.** This is the
+largest known defect and it is deliberately visible rather than hidden. See
+`DECISIONS.md` 4.
 
-**Broker D's fees are unknown, recorded as zero.** They're bundled into the gross
-amount. So the derived price is fee-inflated: it reconciles against the source's
-own total, but it is not a clean execution price. `fees = 0` means *not
-separately reported*, not *none charged* — the schema has no way to say "unknown".
+**Broker D's fees are unknown, recorded as zero.** They're bundled into the gross amount. So the derived price is fee-inflated: it reconciles against the source's own total, but it is not a clean execution price. `fees = 0` means *not separately reported*, not *none charged* — the schema has no way to say "unknown".
 
-**No FX.** GBP and USD rows coexist and are not comparable without a rate. Any
-total across currencies is meaningless. That's correct for an ingestion layer and
-a problem for whatever consumes it.
+**No FX.** GBP and USD rows coexist and are not comparable without a rate. Any total across currencies is meaningless. That's correct for an ingestion layer and a problem for whatever consumes it.
 
-**No corporate actions.** A stock split makes historical quantities wrong. No
-detection, no adjustment.
+**No corporate actions.** A stock split makes historical quantities wrong. No detection, no adjustment.
 
 **Whole file held in memory.** Fine at 10⁵ rows, not at 10⁸.
 
-**UTF-8 assumed.** A Latin-1 export raises on read rather than mangling silently,
-which is the right direction, but it isn't handled.
+**UTF-8 assumed.** A Latin-1 export raises on read rather than mangling silently, which is the right direction, but it isn't handled.
 
-**`%b` is locale-dependent.** `strptime` matches month abbreviations for the
-machine's locale. Parsing `17-Jan-2024` works on an English system and may not on
-another. Untested against a non-English locale.
+**`%b` is locale-dependent.** `strptime` matches month abbreviations for the machine's locale. Parsing `17-Jan-2024` works on an English system and may not on another. Untested against a non-English locale.
 
 ## What I'd do with another week
 
-1. Replace Broker C's date arithmetic with a business-day calendar — or better,
-   go back to the source for real trade dates
+1. Replace Broker C's date arithmetic with a business-day calendar — or better,    go back to the source for real trade dates
 2. Property-based tests with `hypothesis` for the money and date parsers
 3. Stream rows instead of materialising the whole file
 4. A `--report` flag emitting per-source row counts, skip counts and

@@ -27,6 +27,7 @@ change the decision, this test must change with it — that is deliberate.
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from decimal import Decimal
 
@@ -92,7 +93,7 @@ def broker_b_row(**overrides: str) -> dict[str, str]:
 def broker_c_row(**overrides: str) -> dict[str, str]:
     """Row 1 of examples/broker_c.csv — positive quantity, no side column."""
     return {
-        "settle_dt": "17-Jan-2024",
+        "settle_dt": "16-Jan-2024",
         "sym": "AAPL",
         "quantity": "200",
         "px": "149.10",
@@ -262,14 +263,33 @@ def test_broker_b_reports_zero_fees():
 
 
 def test_broker_c_parses_every_field():
+
     txn = BrokerCParser().parse_row(broker_c_row())
 
+    assert txn.trade_date == date(2024, 1, 15)
     assert txn.symbol == "AAPL"
     assert txn.side is Side.BUY
     assert txn.quantity == Decimal("200")
     assert txn.price == Decimal("149.10")
     assert txn.fees == Decimal("2.95")
     assert txn.source == "broker_c"
+
+
+def test_broker_c_warns_when_settlement_falls_on_a_weekend(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Markets do not settle at weekends; flag it, do not fail."""
+    with caplog.at_level(logging.WARNING):
+        BrokerCParser().parse_row(broker_c_row(settle_dt="13-Apr-2024"))
+    assert "weekend" in caplog.text
+
+
+def test_broker_c_is_silent_for_a_normal_settlement_date(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING):
+        BrokerCParser().parse_row(broker_c_row())
+    assert caplog.records == []
 
 
 def test_broker_c_negative_quantity_is_a_sell_with_positive_quantity():

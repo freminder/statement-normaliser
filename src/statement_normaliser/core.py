@@ -11,10 +11,13 @@ drifted. Pass the data in instead.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+import logging
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from statement_normaliser.models import Side
+
+logger = logging.getLogger(__name__)
 
 # Ordered most-specific first. ``%d/%m/%Y`` and ``%m/%d/%Y`` are genuinely
 # ambiguous for days 1-12, which is why each parser declares the formats its
@@ -27,6 +30,8 @@ _DEFAULT_DATE_FORMATS: tuple[str, ...] = (
     "%d-%b-%y",
     "%b %d, %Y",
 )
+
+SATURDAY = 5
 
 
 def parse_date(raw: str, formats: tuple[str, ...] = _DEFAULT_DATE_FORMATS) -> date:
@@ -122,6 +127,35 @@ def parse_side(raw: str) -> Side:
     if normalised in sells:
         return Side.SELL
     raise ValueError(f"unrecognised side {raw!r}")
+
+
+def previous_business_day(settle: date) -> date:
+    """Step back one or two business day(s) from a settlement date.
+
+    Weekends are not trading days, so the step is 1,2 or 3 calendar days
+    depending one where the settlement date falls. Public holidays are not
+    handled - see DECISIONS.md
+    """
+    if settle.weekday() >= SATURDAY:
+        logger.warning(
+            "settlement date %s is a %s, markets do not settle at weekends",
+            settle,
+            settle.strftime("%A"),
+        )
+
+    trade = settle - timedelta(days=1)
+    while trade.weekday() >= SATURDAY:
+        trade -= timedelta(days=1)
+
+    logger.debug(
+        "settle %s (%s) -> trade %s (%s), %d calendar days",
+        settle,
+        settle.strftime("%a"),
+        trade,
+        trade.strftime("%a"),
+        (settle - trade).days,
+    )
+    return trade
 
 
 def side_from_signed_quantity(quantity: Decimal) -> Side:
