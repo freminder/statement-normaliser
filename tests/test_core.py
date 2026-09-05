@@ -21,6 +21,7 @@ from statement_normaliser.core import (
     parse_date,
     parse_money,
     parse_side,
+    previous_business_day,
 )
 from statement_normaliser.models import Side
 
@@ -42,6 +43,25 @@ def test_parses_each_known_date_format(raw: str, expected: date) -> None:
 def test_rejects_unknown_date_format_with_a_useful_message() -> None:
     with pytest.raises(ValueError, match="unrecognised date"):
         parse_date("15.01.24")
+
+
+@pytest.mark.parametrize(
+    ("settle", "expected"),
+    [
+        (date(2024, 4, 8), date(2024, 4, 5)),  # Mon -> Fri, back 3
+        (date(2024, 4, 9), date(2024, 4, 8)),  # Tue -> Mon
+        (date(2024, 4, 10), date(2024, 4, 9)),  # Wed -> Tue
+        (date(2024, 4, 11), date(2024, 4, 10)),  # Thu -> Wed
+        (date(2024, 4, 12), date(2024, 4, 11)),  # Fri -> Thu
+        (date(2024, 4, 13), date(2024, 4, 12)),  # Sat -> Fri
+        (date(2024, 4, 14), date(2024, 4, 12)),  # Sun -> Fri, back 2
+    ],
+)
+def test_previous_business_day_never_lands_on_a_weekend(
+    settle: date, expected: date
+) -> None:
+    assert previous_business_day(settle) == expected
+    assert previous_business_day(settle).weekday() < 5
 
 
 @pytest.mark.parametrize(

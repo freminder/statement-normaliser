@@ -15,7 +15,6 @@ touching nothing that already works.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from datetime import timedelta
 from typing import ClassVar
 
 from statement_normaliser.core import (
@@ -23,6 +22,7 @@ from statement_normaliser.core import (
     parse_date,
     parse_money,
     parse_side,
+    previous_business_day,
     side_from_signed_quantity,
 )
 from statement_normaliser.models import Transaction
@@ -143,11 +143,11 @@ class BrokerBParser(StatementParser):
 
 
 class BrokerCParser(StatementParser):
-    """Broker A: ISO dates, explicit fee column, BUY/SELL labels.
+    """Broker C: ISO dates, explicit fee column, BUY/SELL labels.
 
     Example header row::
 
-        Trade Date,Ticker,Action,Shares,Price,Commission,Ccy
+        Settle Date,Sym,Quantity,PX,Fee
     """
 
     name = "broker_c"
@@ -157,8 +157,9 @@ class BrokerCParser(StatementParser):
     def parse_row(self, row: dict[str, str]) -> Transaction:
         """Convert one Broker A row into a canonical transaction."""
         return Transaction(
-            trade_date=parse_date(row["settle_dt"], self.date_formats)
-            - timedelta(days=2),
+            trade_date=previous_business_day(
+                parse_date(row["settle_dt"], self.date_formats)
+            ),
             symbol=normalise_symbol(row["sym"]),
             side=side_from_signed_quantity(parse_money(row["quantity"])),
             quantity=abs(parse_money(row["quantity"])),
@@ -200,29 +201,6 @@ class BrokerDParser(StatementParser):
             source=self.name,
         )
 
-
-# ─── YOUR TURN ───────────────────────────────────────────────────────────────
-#
-# Implement these three. Each one is deliberately awkward in a different way,
-# and each awkwardness is one you will genuinely meet on a client engagement.
-#
-# class BrokerBParser(StatementParser):
-#     """Broker B: DD/MM/YYYY dates, no fee column, B/S labels, £ symbols."""
-#     # Ambiguity to resolve: is 03/04/2024 March or April? Your date_formats
-#     # declaration is the answer. Write down why in DECISIONS.md.
-#
-# class BrokerCParser(StatementParser):
-#     """Broker C: signed quantities (negative = sell), no Action column."""
-#     # The canonical model keeps quantity positive and direction in `side`.
-#     # Derive the side from the sign, then take abs(). Test the zero case.
-#
-# class BrokerDParser(StatementParser):
-#     """Broker D: a TOTAL summary row at the bottom, fees bundled into price."""
-#     # A parser cannot skip rows on its own — it only sees one at a time.
-#     # Decide where the skip belongs: a `should_skip(row)` hook on the base
-#     # class, or a filter in io.py? Both are defensible. Pick one, justify it.
-#
-# ─────────────────────────────────────────────────────────────────────────────
 
 #: Registration order matters when two formats could both match. Most specific
 #: first. Add your parsers here as you write them.
