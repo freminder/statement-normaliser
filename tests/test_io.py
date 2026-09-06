@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 from pathlib import Path
 
@@ -19,6 +20,11 @@ BROKER_A_CSV = """Trade Date,Ticker,Action,Shares,Price,Commission,Ccy
 BROKER_D_ZERO_UNITS_CSV = """Transaction Date,Security,Type,Units,Gross Amount
 "Jan 15, 2024",AMZN,BUY,10,"$1,552.40"
 "Jan 16, 2024",GOOG,BUY,0,"$0.00"
+"""
+
+BROKER_D_WITH_TOTAL_CSV = """Transaction Date,Security,Type,Units,Gross Amount
+"Jan 15, 2024",AMZN,BUY,10,"$1,552.40"
+TOTAL,,,,"$1,552.40"
 """
 
 
@@ -131,3 +137,17 @@ def test_lenient_mode_skips_a_zero_unit_row(tmp_path: Path) -> None:
 
     assert len(transactions) == 1
     assert transactions[0].symbol == "AMZN"
+
+
+def test_total_row_is_skipped_and_counted_once(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Broker D's trailing TOTAL row is dropped, and the count is logged once."""
+    path = write(tmp_path, "broker_d.csv", BROKER_D_WITH_TOTAL_CSV)
+
+    with caplog.at_level(logging.INFO):
+        transactions = list(read_statement(path))
+
+    assert len(transactions) == 1
+    assert transactions[0].symbol == "AMZN"
+    assert "skipped 1 non-transaction row" in caplog.text

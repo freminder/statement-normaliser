@@ -18,6 +18,7 @@ from abc import ABC, abstractmethod
 from typing import ClassVar
 
 from statement_normaliser.core import (
+    derive_unit_price,
     normalise_symbol,
     parse_date,
     parse_money,
@@ -82,7 +83,7 @@ class StatementParser(ABC):
 
         Raises:
             ValueError: If any field is missing or unparsable. The caller
-                wraps this in a ``RowParseError`` carrying the line number.
+            wraps this in a ``RowParseError`` carrying the line number.
         """
 
 
@@ -189,13 +190,19 @@ class BrokerDParser(StatementParser):
         return row.get("transaction date", "").strip().upper() == "TOTAL"
 
     def parse_row(self, row: dict[str, str]) -> Transaction:
-        """Convert one Broker A row into a canonical transaction."""
+        """Convert one Broker D row into a canonical transaction.
+
+        Broker D reports a gross amount, not a unit price, so the price is
+        derived. A zero unit count makes that impossible — see
+        :func:`~statement_normaliser.core.derive_unit_price`.
+        """
+        units = parse_money(row["units"])
         return Transaction(
             trade_date=parse_date(row["transaction date"], self.date_formats),
             symbol=normalise_symbol(row["security"]),
             side=parse_side(row["type"]),
-            quantity=parse_money(row["units"]),
-            price=parse_money(row["gross amount"]) / parse_money(row["units"]),
+            quantity=units,
+            price=derive_unit_price(parse_money(row["gross amount"]), units),
             fees=parse_money(row.get("fee") or "0"),
             currency=(row.get("ccy") or "USD").strip().upper(),
             source=self.name,

@@ -62,9 +62,6 @@ def read_statement(path: Path, *, strict: bool = True) -> Iterator[Transaction]:
                 logger.debug("skipping non-transaction row at line %d", line_number)
                 continue
 
-            if skipped:
-                logger.info("%s: skipped %d non-transaction row(s)", path.name, skipped)
-
             try:
                 yield parser.parse_row(row)
             except (ValueError, KeyError) as exc:
@@ -72,6 +69,9 @@ def read_statement(path: Path, *, strict: bool = True) -> Iterator[Transaction]:
                 if strict:
                     raise error from exc
                 logger.warning("skipping row: %s", error)
+
+        if skipped:
+            logger.info("%s: skipped %d non-transaction row(s)", path.name, skipped)
 
 
 def read_directory(directory: Path, *, strict: bool = True) -> list[Transaction]:
