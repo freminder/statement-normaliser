@@ -101,3 +101,26 @@ a *reconstruction*, not the statement's own figure.
 **Revisit if.** A source reports FX or fixed income, where six to eight
 decimal places are normal, or if a reconciliation step starts comparing
 `gross_value` against the broker's own total.
+
+## 12. A weekend trade date in source data warns, it does not reject
+
+**Decision.** `core.warn_if_weekend` logs a WARNING naming the source, the
+date and the day name, then returns the date unchanged. Brokers A, B and D
+wrap their stated trade date in it.
+
+**Rejected.** Raising `RowParseError`. Also rejected: silently accepting.
+
+**Why.** `examples/broker_b.csv` reports a sale on Saturday 22 June 2024.
+Markets were closed. The trade is still real money that moved — late
+bookings, corrections and OTC trades all get stamped with odd dates.
+Rejecting the row loses a position. Accepting it silently loses the signal.
+A warning keeps both: the row lands in the output, and the operator can see
+that it needs a phone call.
+
+**Not applied to Broker C.** Its trade date comes from
+`previous_business_day`, whose loop cannot return a weekend. A check there
+would be dead code that looks like a safety net.
+
+**Revisit if.** A reconciliation step starts failing on these rows, or a
+holiday calendar arrives — a check that knows about weekends but not about
+Good Friday is only half a check.

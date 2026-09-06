@@ -52,17 +52,16 @@ def read_statement(path: Path, *, strict: bool = True) -> Iterator[Transaction]:
         parser = parser_cls()
         logger.info("parsing %s with %s", path.name, parser_cls.name)
         skipped = 0
-
         for line_number, raw_row in enumerate(reader, start=2):  # 1 is the header
             row = {
                 (k or "").strip().lower(): (v or "").strip() for k, v in raw_row.items()
             }
-            if parser.should_skip(row):
-                skipped += 1
-                logger.debug("skipping non-transaction row at line %d", line_number)
-                continue
-
             try:
+                if parser.should_skip(row):
+                    skipped += 1
+                    logger.debug("skipping non-transaction row at line %d", line_number)
+                    continue
+
                 yield parser.parse_row(row)
             except (ValueError, KeyError) as exc:
                 error = RowParseError(path, line_number, str(exc))
@@ -104,16 +103,29 @@ def read_directory(directory: Path, *, strict: bool = True) -> list[Transaction]
 def write_canonical(transactions: list[Transaction], path: Path) -> None:
     """Write transactions to the canonical CSV schema.
 
+    The file is written to a sibling temporary file and moved into place, so a
+    crash or a lock mid-write cannot leave a truncated CSV behind. Readers see
+    either the old file or the new one, never half of either.
+
     Args:
         transactions: Rows to write, already in the order you want them.
         path: Destination. Parent directories are created if needed.
+
+    Raises:
+        OSError: If the file cannot be written or moved into place.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp")
 
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(CANONICAL_HEADERS)
-        for txn in transactions:
-            writer.writerow([getattr(txn, header) for header in CANONICAL_HEADERS])
+    try:
+        with tmp.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(CANONICAL_HEADERS)
+            for txn in transactions:
+                writer.writerow([getattr(txn, header) for header in CANONICAL_HEADERS])
+        tmp.replace(path)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
 
     logger.info("wrote %d transactions to %s", len(transactions), path)

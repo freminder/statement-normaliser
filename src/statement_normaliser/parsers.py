@@ -25,6 +25,7 @@ from statement_normaliser.core import (
     parse_side,
     previous_business_day,
     side_from_signed_quantity,
+    warn_if_weekend,
 )
 from statement_normaliser.models import Transaction
 
@@ -104,7 +105,9 @@ class BrokerAParser(StatementParser):
     def parse_row(self, row: dict[str, str]) -> Transaction:
         """Convert one Broker A row into a canonical transaction."""
         return Transaction(
-            trade_date=parse_date(row["trade date"], self.date_formats),
+            trade_date=warn_if_weekend(
+                parse_date(row["trade date"], self.date_formats), self.name
+            ),
             symbol=normalise_symbol(row["ticker"]),
             side=parse_side(row["action"]),
             quantity=parse_money(row["shares"]),
@@ -130,9 +133,11 @@ class BrokerBParser(StatementParser):
     date_formats = ("%d/%m/%Y",)
 
     def parse_row(self, row: dict[str, str]) -> Transaction:
-        """Convert one Broker A row into a canonical transaction."""
+        """Convert one Broker B row into a canonical transaction."""
         return Transaction(
-            trade_date=parse_date(row["date"], self.date_formats),
+            trade_date=warn_if_weekend(
+                parse_date(row["date"], self.date_formats), self.name
+            ),
             symbol=normalise_symbol(row["instrument"]),
             side=parse_side(row["b/s"]),
             quantity=parse_money(row["qty"]),
@@ -144,11 +149,11 @@ class BrokerBParser(StatementParser):
 
 
 class BrokerCParser(StatementParser):
-    """Broker C: ISO dates, explicit fee column, BUY/SELL labels.
+    """Broker C: ISO dates, explicit fee column, BUY/SELL labels from Quantity.
 
     Example header row::
 
-        Settle Date,Sym,Quantity,PX,Fee
+        SETTLE_DT,SYM,QUANTITY,PX,FEE
     """
 
     name = "broker_c"
@@ -156,7 +161,7 @@ class BrokerCParser(StatementParser):
     date_formats = ("%d-%b-%Y",)
 
     def parse_row(self, row: dict[str, str]) -> Transaction:
-        """Convert one Broker A row into a canonical transaction."""
+        """Convert one Broker C row into a canonical transaction."""
         return Transaction(
             trade_date=previous_business_day(
                 parse_date(row["settle_dt"], self.date_formats)
@@ -172,7 +177,7 @@ class BrokerCParser(StatementParser):
 
 
 class BrokerDParser(StatementParser):
-    """Broker A: ISO dates, explicit fee column, BUY/SELL labels.
+    """Broker D: ISO dates, Purchase/ Sale labels.
 
     Example header row::
 
@@ -198,7 +203,9 @@ class BrokerDParser(StatementParser):
         """
         units = parse_money(row["units"])
         return Transaction(
-            trade_date=parse_date(row["transaction date"], self.date_formats),
+            trade_date=warn_if_weekend(
+                parse_date(row["transaction date"], self.date_formats), self.name
+            ),
             symbol=normalise_symbol(row["security"]),
             side=parse_side(row["type"]),
             quantity=units,

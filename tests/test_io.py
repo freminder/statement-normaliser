@@ -27,6 +27,23 @@ BROKER_D_WITH_TOTAL_CSV = """Transaction Date,Security,Type,Units,Gross Amount
 TOTAL,,,,"$1,552.40"
 """
 
+BROKER_B_WEEKEND_CSV = """Date,Instrument,B/S,Qty,Unit Price,Currency
+22/06/2024,VOD.L,S,400,£0.74,GBP
+"""
+
+
+def test_weekend_trade_date_warns_but_still_parses(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A Saturday trade date in the source is surfaced, not rejected."""
+    path = write(tmp_path, "broker_b.csv", BROKER_B_WEEKEND_CSV)
+
+    with caplog.at_level(logging.WARNING):
+        transactions = list(read_statement(path))
+
+    assert len(transactions) == 1
+    assert "Saturday" in caplog.text
+
 
 def write(tmp_path: Path, name: str, content: str) -> Path:
     path = tmp_path / name
