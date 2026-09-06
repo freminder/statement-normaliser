@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from statement_normaliser.models import Side
 
@@ -32,6 +32,7 @@ _DEFAULT_DATE_FORMATS: tuple[str, ...] = (
 )
 
 SATURDAY = 5
+PRICE_SCALE = Decimal("0.0001")
 
 
 def parse_date(raw: str, formats: tuple[str, ...] = _DEFAULT_DATE_FORMATS) -> date:
@@ -100,6 +101,32 @@ def parse_money(raw: str) -> Decimal:
         raise ValueError(f"not a number: {raw!r}") from exc
 
     return -value if negative else value
+
+
+def derive_unit_price(gross: Decimal, units: Decimal) -> Decimal:
+    """Derive a per-unit price from a gross amount and a unit count.
+
+    Args:
+        gross: Total consideration for the row.
+        units: Number of units traded. Must not be zero.
+
+    Returns:
+        The per-unit price, rounded to :data:`PRICE_SCALE`.
+
+    Raises:
+        ValueError: If ``units`` is zero. Division would otherwise raise a
+            ``decimal.DivisionByZero`` or ``decimal.InvalidOperation``, neither
+            of which is a ``ValueError``, so the caller's handler misses it.
+
+    Example:
+        >>> derive_unit_price(Decimal("1552.40"), Decimal("10"))
+        Decimal('155.2400')
+    """
+    if units == 0:
+        raise ValueError(
+            f"cannot derive a unit price from gross {gross} and zero units"
+        )
+    return (gross / units).quantize(PRICE_SCALE, rounding=ROUND_HALF_UP)
 
 
 def parse_side(raw: str) -> Side:
