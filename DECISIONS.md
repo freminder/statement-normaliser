@@ -124,3 +124,27 @@ would be dead code that looks like a safety net.
 **Revisit if.** A reconciliation step starts failing on these rows, or a
 holiday calendar arrives — a check that knows about weekends but not about
 Good Friday is only half a check.
+
+## 13. Optional columns use `.get` with a default, even when absent today
+
+**Decision.** Fee and currency cells are read as `row.get("fee") or "0"` and
+`row.get("ccy") or "USD"` in every parser, including Brokers B, C and D whose
+files carry no such column.
+
+**Rejected.** Hard-coding `Decimal("0")` and `"USD"` where the column provably
+does not exist.
+
+**Why.** Every `parse_row` reads the same shape, so a reader compares four
+parsers without checking which columns each file happens to have. If a broker
+starts sending a fee column, the parser picks it up with no code change. The
+default is the documented behaviour from #7 — a missing fee is zero, not
+unknown.
+
+**The cost.** Four of these fallbacks never fire. `.get` implies the column is
+sometimes present; here it never is. This entry is the only thing telling a
+reader that.
+
+**Required columns are still indexed.** `row["ccy"]` in Broker A and
+`row["currency"]` in Broker B use brackets, because `required_headers`
+guarantees them and `KeyError` is caught by `read_statement`. `.get` there
+would return `None` and raise `AttributeError`, which is not caught.
