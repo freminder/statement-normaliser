@@ -113,7 +113,7 @@ class BrokerAParser(StatementParser):
             quantity=parse_money(row["shares"]),
             price=parse_money(row["price"]),
             fees=parse_money(row.get("commission") or "0"),
-            currency=(row.get("ccy")).strip().upper(),
+            currency=row["ccy"].strip().upper(),
             source=self.name,
         )
 
@@ -143,7 +143,7 @@ class BrokerBParser(StatementParser):
             quantity=parse_money(row["qty"]),
             price=parse_money(row["unit price"]),
             fees=parse_money(row.get("commission") or "0"),
-            currency=(row.get("currency")).strip().upper(),
+            currency=row["currency"].strip().upper(),
             source=self.name,
         )
 
