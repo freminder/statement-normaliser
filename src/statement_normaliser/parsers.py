@@ -113,17 +113,17 @@ class BrokerAParser(StatementParser):
             quantity=parse_money(row["shares"]),
             price=parse_money(row["price"]),
             fees=parse_money(row.get("commission") or "0"),
-            currency=(row.get("ccy") or "USD").strip().upper(),
+            currency=(row.get("ccy")).strip().upper(),
             source=self.name,
         )
 
 
 class BrokerBParser(StatementParser):
-    """Broker B: dates are DD/MM/YYYY, no fee column, BUY/SELL labels.
+    """Broker B: DD/MM/YYYY dates, no fee column, B/S side labels.
 
     Example header row::
 
-        Trade Date,Ticker,Action,Shares,Price,Commission,Ccy
+        Date,Instrument,B/S,Qty,Unit Price,Currency
     """
 
     name = "broker_b"
@@ -143,13 +143,17 @@ class BrokerBParser(StatementParser):
             quantity=parse_money(row["qty"]),
             price=parse_money(row["unit price"]),
             fees=parse_money(row.get("commission") or "0"),
-            currency=(row.get("currency") or "GBP").strip().upper(),
+            currency=(row.get("currency")).strip().upper(),
             source=self.name,
         )
 
 
 class BrokerCParser(StatementParser):
-    """Broker C: ISO dates, explicit fee column, BUY/SELL labels from Quantity.
+    """Broker C: DD-Mon-YYYY dates, explicit fee column, side from QUANTITY sign.
+
+    Reports settlement dates, not trade dates. The trade date is derived —
+    see :func:`~statement_normaliser.core.previous_business_day` and
+    DECISIONS.md #4.
 
     Example header row::
 
@@ -162,26 +166,30 @@ class BrokerCParser(StatementParser):
 
     def parse_row(self, row: dict[str, str]) -> Transaction:
         """Convert one Broker C row into a canonical transaction."""
+        quantity = parse_money(row["quantity"])
         return Transaction(
             trade_date=previous_business_day(
                 parse_date(row["settle_dt"], self.date_formats)
             ),
             symbol=normalise_symbol(row["sym"]),
-            side=side_from_signed_quantity(parse_money(row["quantity"])),
-            quantity=abs(parse_money(row["quantity"])),
+            side=side_from_signed_quantity(quantity),
+            quantity=abs(quantity),
             price=parse_money(row["px"]),
-            fees=parse_money(row.get("fee") or "0"),
+            fees=parse_money(row["fee"]),
             currency=(row.get("ccy") or "USD").strip().upper(),
             source=self.name,
         )
 
 
 class BrokerDParser(StatementParser):
-    """Broker D: ISO dates, Purchase/ Sale labels.
+    """Broker D: "Mon DD, YYYY" dates, no fee column, Purchase/Sale labels.
+
+    Reports a gross amount, not a unit price. The price is derived — see
+    :func:`~statement_normaliser.core.derive_unit_price` and DECISIONS.md #11.
 
     Example header row::
 
-        Trade Date,Ticker,Action,Shares,Price,Commission,Ccy
+        Transaction Date,Security,Type,Units,Gross Amount
     """
 
     name = "broker_d"
