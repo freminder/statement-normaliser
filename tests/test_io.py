@@ -16,6 +16,11 @@ BROKER_A_CSV = """Trade Date,Ticker,Action,Shares,Price,Commission,Ccy
 2024-02-20,MSFT,SELL,50,410.25,1.50,USD
 """
 
+BROKER_D_ZERO_UNITS_CSV = """Transaction Date,Security,Type,Units,Gross Amount
+"Jan 15, 2024",AMZN,BUY,10,"$1,552.40"
+"Jan 16, 2024",GOOG,BUY,0,"$0.00"
+"""
+
 
 def write(tmp_path: Path, name: str, content: str) -> Path:
     path = tmp_path / name
@@ -97,3 +102,32 @@ def test_round_trip_writes_a_readable_canonical_file(tmp_path: Path) -> None:
 def test_missing_directory_fails_clearly(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="not a directory"):
         read_directory(tmp_path / "nope")
+
+
+@pytest.mark.parametrize(
+    ("gross", "case"),
+    [("$1,552.40", "division by zero"), ("$0.00", "zero divided by zero")],
+)
+def test_zero_units_reports_the_line_number_not_a_raw_traceback(
+    tmp_path: Path, gross: str, case: str
+) -> None:
+    csv = (
+        "Transaction Date,Security,Type,Units,Gross Amount\n"
+        '"Jan 15, 2024",AMZN,BUY,10,"$1,552.40"\n'
+        f'"Jan 16, 2024",GOOG,BUY,0,"{gross}"\n'
+    )
+    path = write(tmp_path, "broker_d.csv", csv)
+
+    with pytest.raises(RowParseError) as excinfo:
+        list(read_statement(path))
+
+    assert excinfo.value.line_number == 3
+
+
+def test_lenient_mode_skips_a_zero_unit_row(tmp_path: Path) -> None:
+    path = write(tmp_path, "broker_d.csv", BROKER_D_ZERO_UNITS_CSV)
+
+    transactions = list(read_statement(path, strict=False))
+
+    assert len(transactions) == 1
+    assert transactions[0].symbol == "AMZN"
