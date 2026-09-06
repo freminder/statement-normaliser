@@ -160,7 +160,7 @@ def previous_business_day(settle: date) -> date:
     """Step back one or two business day(s) from a settlement date.
 
     Weekends are not trading days, so the step is 1,2 or 3 calendar days
-    depending one where the settlement date falls. Public holidays are not
+    depending on where the settlement date falls. Public holidays are not
     handled - see DECISIONS.md
     """
     if settle.weekday() >= SATURDAY:
@@ -183,6 +183,31 @@ def previous_business_day(settle: date) -> date:
         (settle - trade).days,
     )
     return trade
+
+
+def warn_if_weekend(trade_date: date, source: str) -> date:
+    """Log a warning if a stated trade date falls on a weekend.
+
+    Broker B's June 2024 statement reports a trade on Saturday 22 June. The
+    parser is correct; the source data is not. We surface it and carry on,
+    because rejecting the row would lose a real position over a date that is
+    probably a booking artefact.
+
+    Args:
+        trade_date: The date as stated by the source.
+        source: Parser name, so the log names the culprit file.
+
+    Returns:
+        ``trade_date`` unchanged, so this composes inline.
+    """
+    if trade_date.weekday() >= SATURDAY:
+        logger.warning(
+            "%s: trade date %s is a %s, markets are closed at weekends",
+            source,
+            trade_date,
+            trade_date.strftime("%A"),
+        )
+    return trade_date
 
 
 def side_from_signed_quantity(quantity: Decimal) -> Side:
